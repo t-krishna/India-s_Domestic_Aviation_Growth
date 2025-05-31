@@ -8,13 +8,12 @@ library(janitor)
 library(tidyverse)
 
 # Data Cleaning
-# Reaplacing null values with 0
-
+# Data Cleaning
+# Replacing NA values with 0 for numeric columns only
 clean_data <- combined_data %>%
-  mutate(across(everything(), ~ replace_na(., 0)))
+  mutate(across(where(is.numeric), ~ replace_na(., 0)))
 
-# Replacing NA values with 0
-
+# Replacing specific NA values with 0 in selected columns
 clean_data <- clean_data %>%
   mutate(across(
     c(passengers_to_city_2, passengers_from_city_2,
@@ -23,28 +22,24 @@ clean_data <- clean_data %>%
     ~ replace_na(., 0)
   ))
 
-# Removing SNo column
-
-clean_data <- clean_data %>%
-  select(-s_no)
-
+# Select only relevant columns
 clean_data <- clean_data %>%
   select(city_1, city_2, passengers_to_city_2, passengers_from_city_2,
          freight_to_city_2, freight_from_city_2,
          mail_to_city_2, mail_from_city_2, month_year)
 
-# Formating data types
-
+# Function to clean numeric columns (handling commas, spaces, etc.)
 clean_numeric <- function(x) {
-  x <- as.character(x) # ensure it's character for str_replace_all
-  x <- str_trim(x)     # remove leading/trailing whitespace
-  x <- str_replace_all(x, ",", "")
-  x <- na_if(x, "-")
-  x <- na_if(x, "N/A")
-  x <- na_if(x, "")
-  as.numeric(x)
+  x <- as.character(x)      # Ensure it's character for str_replace_all
+  x <- str_trim(x)          # Remove leading/trailing whitespace
+  x <- str_replace_all(x, ",", "")  # Remove commas if present
+  x <- na_if(x, "-")        # Replace "-" with NA
+  x <- na_if(x, "N/A")      # Replace "N/A" with NA
+  x <- na_if(x, "")         # Replace empty strings with NA
+  as.numeric(x)             # Convert cleaned string to numeric
 }
 
+# Apply the clean_numeric function to selected columns
 clean_data <- clean_data %>%
   mutate(
     passengers_to_city_2 = clean_numeric(passengers_to_city_2),
@@ -92,11 +87,45 @@ Final_data_clean <- Final_data %>%
     destination_city = toupper(trimws(destination_city))
   )
 
+Final_data_clean <- Final_data_clean %>%
+  mutate(across(where(is.numeric), ~ replace_na(., 0)))
+
 # Mapping table values
 
 city_name_mapping <- c(
-  "RAJKOT INTERNATIONAL AIRP" = "RAJKOT INTERNATIONAL AIRPORT",
-  "AYODHYA INTERNATIONAL AI" = "AYODHYA INTERNATIONAL AIRPORT"
+  "RAJKOT INTERNATIONAL AIRPORT" = "RAJKOT",
+  "RAJKOT INTERNATIONAL AIRP" = "RAJKOT",
+  "AYODHYA INTERNATIONAL AIRPORT" = "AYODHYA",
+  "AYODHYA INTERNATIONAL AI" = "AYODHYA",
+  "LAKSHADWEEP" = 	"AGATTI ISLAND",
+  "BAREILLY" =	"BARELI",
+  "DABOLIM" =	"GOA",
+  "DELHI" =	"NEW DELHI",
+  "HINDON AIRPORT" =	"GHAZIABAD",
+  "KULLU" =	"BHUNTAR KULLU",
+  "PAKYONG" =	"GANGTOK",
+  "UTKELA" =	"BHAWANIPATNA",
+  "SHIVAMOGGA AIRPORT" = "SHIVAMOGGA",
+  "AZAMGARH AIRPORT" =	"AZAMGARH",
+  "ALIGARH AIRPORT" =	"ALIGARH",
+  "CHITRAKOOT AIRPORT" =	"CHITRAKOOT",
+  "SHRAVASTI AIRPORT" =	"SHRAVASTI",
+  "MORADABAD AIRPORT" =	"MORADABAD",
+  "AMBIKAPUR AIRPORT" = 	"AMBIKAPUR",
+  "BIDAR AIRPORT, KARN" = "BIDAR",
+  "BIDAR AIRPORT, KARNATAKA" = "BIDAR",
+  "DEHRA DUN" = "DEHRADUN",
+  "GONDIA AIRPORT" = "GONDIA",
+  "HOLLONGI AIRPORT, ITANAGAR" = "ITANAGAR",
+  "KALABURAGI, KARNAT" = "KALABURAGI",
+  "KALABURAGI, KARNATAKA" = "KALABURAGI",
+  "KUSHINAGAR INTERNATIONAL AIRPORT" = "KUSHINAGAR",
+  "MOPA, GOA" = "GOA",
+  "SINDHUDURG AIRPORT" = "SINDHUDURG",
+  "ZERO AIRPORT" = "ZIRO",
+  "COCHIN" = "KOCHI",
+  "DEOGHAR AIRPORT" = "DEOGHAR",
+  "PONDICHERRY" = "PUDUCHERRY"
 )
 
 Final_data_clean <- Final_data_clean %>%
@@ -105,10 +134,7 @@ Final_data_clean <- Final_data_clean %>%
     destination_city = recode(destination_city, !!!city_name_mapping)
   )
 
-Final_data_clean <- Final_data_clean %>%
-  mutate(
-    month_year = as.Date(paste0("01-", month_year), format = "%d-%b %Y")
-  )
+Final_data_clean <- Final_data_clean[!is.na(Final_data_clean$origin_city) & !is.na(Final_data_clean$destination_city), ]
 
 # Analysis
 # Total passengers on each route
@@ -205,18 +231,103 @@ ggplot(top_20_bidirectional, aes(x = reorder(route, total_passengers), y = total
   ) +
   scale_y_continuous(labels = scales::comma)
 
+#Route Clustering
+#Data Preperation
+# Define metro cities
+metro_cities <- c("AHMEDABAD", "BENGALURU", "CHENNAI", "DELHI", 
+                  "HYDERABAD", "KOLKATA", "MUMBAI", "PUNE")
+
+# Create route_pair column, and flag metro status
+Final_data_clean <- Final_data_clean %>%
+  mutate(
+    # Bidirectional pair: alphabetically ordered city pair
+    route_pair = paste0(pmin(origin_city, destination_city), " - ", 
+                        pmax(origin_city, destination_city)),
+    
+    # Flag metro/non-metro for each city
+    origin_is_metro = origin_city %in% metro_cities,
+    dest_is_metro = destination_city %in% metro_cities
+  )
+
+# Assign Route Cluster
+
+Final_data_clean <- Final_data_clean %>%
+  mutate(
+    route_cluster = case_when(
+      origin_is_metro & dest_is_metro ~ "Metro - Metro",
+      xor(origin_is_metro, dest_is_metro) ~ "Metro - Non-Metro",
+      TRUE ~ "Non-Metro - Non-Metro"
+    )
+  )
+
+# Group by route_pair and route_cluster, then summarize
+bidirectional_routes <- Final_data_clean %>%
+  group_by(route_pair, route_cluster) %>%
+  summarise(
+    total_passengers = sum(passengers, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# View the summarized routes
+bidirectional_routes
+
+# Total Passengers by Cluster Type
+passenger_by_cluster <- Final_data_clean %>%
+  group_by(route_cluster) %>%
+  summarise(total_passengers = sum(passengers, na.rm = TRUE)) %>%
+  arrange(desc(total_passengers))
+
+ggplot(passenger_by_cluster, aes(x = route_cluster, y = total_passengers, fill = route_cluster)) +
+  geom_col() +
+  scale_fill_manual(values = c("Metro - Metro" = "red",
+                               "Metro - Non-Metro" = "orange",
+                               "Non-Metro - Non-Metro" = "blue")) +
+  theme_minimal() +
+  labs(title = "Total Passengers by Route Cluster",
+       x = "Route Cluster", y = "Total Passengers") +
+  theme(legend.position = "none")
+
+# Monthly Passengers by Route Cluster (Trend Line)
+# Convert month_year into a proper Date type ( from "MMMM YYYY" format) and ensure month_year is a date and keep first day of month
+Final_data_clean <- Final_data_clean %>%
+  mutate(month_year = as.Date(month_year))
+
+# summarise data
+monthly_cluster_trend <- Final_data_clean %>%
+  group_by(month_year, route_cluster) %>%
+  summarise(monthly_passengers = sum(passengers, na.rm = TRUE), .groups = 'drop')
+
+# Convert month_year to Date type (first day of the month)
+monthly_cluster_trend$month_year <- as.Date(paste0(monthly_cluster_trend$month_year, "-01"), format = "%b %Y-%d")
+
+# Remove rows with missing values in month_year
+monthly_cluster_trend <- monthly_cluster_trend %>%
+  filter(!is.na(monthly_cluster_trend$month_year))
+
+# Plot with proper date handling
+ggplot(monthly_cluster_trend, aes(x = month_year, y = monthly_passengers, color = route_cluster, group = route_cluster)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("Metro - Metro" = "red",
+                                "Metro - Non-Metro" = "orange",
+                                "Non-Metro - Non-Metro" = "blue")) +
+  theme_minimal() +
+  labs(title = "Monthly Passenger Trend by Route Cluster",
+       x = "Month", y = "Passengers", color = "Route Cluster") +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 # Export data for visualisation in PowerBI
-# Create a folder to save CSVs export_folder \<-
-"C:/Users/tulas/Documents/Airports/Exports" dir.create(export_folder,
-showWarnings = FALSE)
+# Create a folder to save CSVs
+
+export_folder <- "C:/Users/tulas/Documents/Airports1/Exports"
+dir.create(export_folder, showWarnings = TRUE, recursive = TRUE)
 
 # Export files to the folder
 
-write.csv(Final_data_clean, file.path(export_folder,
-"Cleaned_Final_CityPair_Data.csv"), row.names = FALSE)
-write.csv(top_10_routes, file.path(export_folder, "Top_10_Routes.csv"),
-row.names = FALSE) write.csv(top_20_routes, file.path(export_folder,
-"Top_20_Routes.csv"), row.names = FALSE)
-write.csv(top_20_bidirectional_routes, file.path(export_folder,
-"Top_20_Bidirectional_Routes.csv"), row.names = FALSE)
-write.csv(bidirectional_routes, file.path(export_folder,
+write.csv(Final_data_clean, file.path(export_folder, "Cleaned_Final_CityPair_Data.csv"), row.names = FALSE)
+write.csv(top_20_routes, file.path(export_folder, "Top_20_Routes.csv"), row.names = FALSE)
+write.csv(top_20_bidirectional_routes, file.path(export_folder, "Top_20_Bidirectional_Routes.csv"), row.names = FALSE)
+write.csv(bidirectional_routes, file.path(export_folder, "Bidirectional_Routes_With_Clusters.csv"), row.names = FALSE)
+write.csv(passenger_by_cluster, file.path(export_folder, "Passengers_By_Route_Cluster.csv"), row.names = FALSE)
+write.csv(monthly_cluster_trend, file.path(export_folder, "Monthly_Cluster_Trend.csv"), row.names = FALSE)
