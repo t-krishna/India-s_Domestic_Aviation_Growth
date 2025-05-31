@@ -1,6 +1,12 @@
 # Introduction This report analyzes the Domestic Passenger Traffic for India in the year 2024.
 # We explore the top routes, traffic patterns, and perform clustering analysis.
 
+# Load libraries
+
+library(readxl)
+library(janitor)
+library(tidyverse)
+
 # Data Cleaning
 # Reaplacing null values with 0
 
@@ -199,87 +205,6 @@ ggplot(top_20_bidirectional, aes(x = reorder(route, total_passengers), y = total
   ) +
   scale_y_continuous(labels = scales::comma)
 
-#Route Clustering
-#Data Preperation
-
-```{r}
-# Define metro cities
-metro_cities <- c("AHMEDABAD", "BENGALURU", "CHENNAI", "DELHI", 
-                  "HYDERABAD", "KOLKATA", "MUMBAI", "PUNE")
-
-# Create route_pair column, and flag metro status
-Final_data_clean <- Final_data_clean %>%
-  mutate(
-    # Bidirectional pair: alphabetically ordered city pair
-    route_pair = paste0(pmin(origin_city, destination_city), " - ", 
-                        pmax(origin_city, destination_city)),
-    
-    # Flag metro/non-metro for each city
-    origin_is_metro = origin_city %in% metro_cities,
-    dest_is_metro = destination_city %in% metro_cities
-  )
-
-# Assign Route Cluster
-
-Final_data_clean <- Final_data_clean %>%
-  mutate(
-    route_cluster = case_when(
-      origin_is_metro & dest_is_metro ~ "Metro - Metro",
-      xor(origin_is_metro, dest_is_metro) ~ "Metro - Non-Metro",
-      TRUE ~ "Non-Metro - Non-Metro"
-    )
-  )
-
-# Group by route_pair and route_cluster, then summarize
-bidirectional_routes <- Final_data_clean %>%
-  group_by(route_pair, route_cluster) %>%
-  summarise(
-    total_passengers = sum(passengers, na.rm = TRUE),
-    .groups = 'drop'
-  )
-
-# View the summarized routes
-bidirectional_routes
-
-# Total Passengers by Cluster Type
-passenger_by_cluster <- Final_data_clean %>%
-  group_by(route_cluster) %>%
-  summarise(total_passengers = sum(passengers, na.rm = TRUE)) %>%
-  arrange(desc(total_passengers))
-
-ggplot(passenger_by_cluster, aes(x = route_cluster, y = total_passengers, fill = route_cluster)) +
-  geom_col() +
-  scale_fill_manual(values = c("Metro - Metro" = "red",
-                               "Metro - Non-Metro" = "orange",
-                               "Non-Metro - Non-Metro" = "blue")) +
-  theme_minimal() +
-  labs(title = "Total Passengers by Route Cluster",
-       x = "Route Cluster", y = "Total Passengers") +
-  theme(legend.position = "none")
-
-# Monthly Passengers by Route Cluster (Trend Line)
-# Convert month_year into a proper Date type ( from "MMMM YYYY" format) and ensure month_year is a date and keep first day of month
-Final_data_clean <- Final_data_clean %>%
-  mutate(month_year = as.Date(month_year))
-
-# summarise data
-monthly_cluster_trend <- Final_data_clean %>%
-  group_by(month_year, route_cluster) %>%
-  summarise(monthly_passengers = sum(passengers, na.rm = TRUE), .groups = 'drop')
-
-# Plot with proper date handling
-ggplot(monthly_cluster_trend, aes(x = month_year, y = monthly_passengers, color = route_cluster, group = route_cluster)) +
-  geom_line(size = 1.2) +
-  geom_point(size = 2) +
-  scale_color_manual(values = c("Metro - Metro" = "red",
-                                "Metro - Non-Metro" = "orange",
-                                "Non-Metro - Non-Metro" = "blue")) +
-  theme_minimal() +
-  labs(title = "Monthly Passenger Trend by Route Cluster",
-       x = "Month", y = "Passengers", color = "Route Cluster") +
-  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
 # Export data for visualisation in PowerBI
 # Create a folder to save CSVs export_folder \<-
 "C:/Users/tulas/Documents/Airports/Exports" dir.create(export_folder,
@@ -295,8 +220,3 @@ row.names = FALSE) write.csv(top_20_routes, file.path(export_folder,
 write.csv(top_20_bidirectional_routes, file.path(export_folder,
 "Top_20_Bidirectional_Routes.csv"), row.names = FALSE)
 write.csv(bidirectional_routes, file.path(export_folder,
-"Bidirectional_Routes_With_Clusters.csv"), row.names = FALSE)
-write.csv(passenger_by_cluster, file.path(export_folder,
-"Passengers_By_Route_Cluster.csv"), row.names = FALSE)
-write.csv(monthly_cluster_trend, file.path(export_folder,
-"Monthly_Cluster_Trend.csv"), row.names = FALSE)
